@@ -7,3 +7,4 @@ numpy==1.26.4
 agno
 together
 e2b
+e2b_code_interpreter
