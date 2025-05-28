@@ -8,3 +8,4 @@ agno
 together
 e2b
 e2b_code_interpreter
+openpyxl
