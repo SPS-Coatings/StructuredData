@@ -393,9 +393,6 @@
 
 
 
-
-
-# unified_data_agent.py
 """
 📊 Unified Data Agent ― ONE chat, TWO super-powers
 ───────────────────────────────────────────────────────────────────────────────
@@ -406,7 +403,7 @@ A single Streamlit interface that lets you
 
 🔑 **New**: upload **multiple** CSV/XLSX files and query or plot *across* them.
    – Every file becomes its own DuckDB table (named after the file)  
-   – The visual agent receives a dictionary of file → path mappings so it can
+   – The visual agent receives a dict of file → path mappings so it can
      generate Python that loads/joins/comparisons across datasets.
 
 Run with:
@@ -446,12 +443,28 @@ from phi.tools.pandas import PandasTools
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 st.set_page_config(page_title="📊 Unified Data Agent", page_icon="📊")
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Session-state bootstrap  ★ NEW ★
+# Ensures all keys exist on first run, avoiding AttributeError on rerun.
+# ──────────────────────────────────────────────────────────────────────────────
+for k, v in {
+    "datasets":           [],
+    "data_prepared":      False,
+    "files_hash":         None,
+    "chat_history":       [],
+    "phi_agent":          None,
+    "tg_key":             "",
+    "e2b_key":            "",
+    "openai_key":         "",
+    "tg_model":           "",
+}.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
 # Regex to extract python blocks from LLM messages
 PYTHON_BLOCK = re.compile(r"```python\n(.*?)\n```", re.DOTALL)
 
-# ──────────────────────────────────────────────────────────────────────────────
 # Helper ─ Router logic
-# ──────────────────────────────────────────────────────────────────────────────
 VISUAL_KEYWORDS = {
     "plot", "chart", "graph", "visual", "visualise", "visualize",
     "scatter", "bar", "line", "hist", "histogram", "heatmap", "pie",
@@ -688,8 +701,7 @@ uploaded_files = st.file_uploader(
 
 # --- Handle uploads & preprocessing -----------------------------------------
 if uploaded_files and (
-    "files_hash" not in st.session_state
-    or st.session_state.files_hash != hash(tuple(f.name for f in uploaded_files))
+    st.session_state.files_hash != hash(tuple(f.name for f in uploaded_files))
 ):
     dataset_infos: List[dict] = []
 
@@ -708,18 +720,18 @@ if uploaded_files and (
             )
 
     if dataset_infos:
-        st.session_state.datasets = dataset_infos
+        st.session_state.datasets      = dataset_infos
         st.session_state.data_prepared = True
-        st.session_state.files_hash = hash(tuple(f.name for f in uploaded_files))
+        st.session_state.files_hash    = hash(tuple(f.name for f in uploaded_files))
 
-        # Build φ agent for *all* datasets
+        # Build φ agent for *all* datasets if key is present
         if openai_key:
             st.session_state.phi_agent = build_phi_agent(dataset_infos, openai_key)
         else:
-            st.error("OpenAI key required for analyst agent.")
+            st.warning("OpenAI key required for analyst agent.")
 
 # --- Show dataset previews ---------------------------------------------------
-if st.session_state.get("data_prepared"):
+if st.session_state.data_prepared:
     st.subheader("Dataset previews (first 8 rows each)")
     for info in st.session_state.datasets:
         with st.expander(f"📄 {info['file'].name}  (table: {info['name']})", expanded=False):
@@ -729,10 +741,7 @@ if st.session_state.get("data_prepared"):
 # ──────────────────────────────────────────────────────────────────────────────
 # Chat interface
 # ──────────────────────────────────────────────────────────────────────────────
-if st.session_state.get("data_prepared"):
-
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history: List[dict] = []
+if st.session_state.data_prepared:
 
     # Display existing messages
     for msg in st.session_state.chat_history:
@@ -820,7 +829,13 @@ if st.session_state.get("data_prepared"):
             st.session_state.chat_history.append(assistant_msg)
 
         else:  # analyst
+            # ★ NEW ─ ensure φ-agent exists on every rerun
+            if st.session_state.phi_agent is None:
+                st.session_state.phi_agent = build_phi_agent(
+                    st.session_state.datasets, openai_key
+                )
             agent: DuckDbAgent = st.session_state.phi_agent
+
             with st.spinner("🧠 φ-agent is thinking… (SQL + analysis)"):
                 run = agent.run(user_query)
 
@@ -833,4 +848,3 @@ if st.session_state.get("data_prepared"):
             st.session_state.chat_history.append(assistant_msg)
 else:
     st.info("⬆️  Upload one or more datasets to start chatting!")
-
